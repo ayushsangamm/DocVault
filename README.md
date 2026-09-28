@@ -1,119 +1,132 @@
-# DocVault 🛡️ — Controlled & Audited Document Sharing
+# DocVault 🔐
 
-> **A zero-trust, controlled document-sharing platform for high-sensitivity files** (certificates, legal agreements, medical reports, compliance audits). Built for **control and accountability**, not convenience.
-
-Unlike Google Drive or traditional cloud storage, **DocVault guarantees**:
-1. **Auto-Expiring Access**: Time-based (hours/days) and strict atomic view-count quotas.
-2. **Instant Revocation Without Breaking URLs**: Revoking a link puts its cryptographic ID in a distributed Redis blacklist, immediately returning `403 Forbidden` within milliseconds.
-3. **Granular Permissions & Least Privilege**: View-Only or Allow-Download. View mode blocks direct binary downloads, right-click, text selection, and prints.
-4. **Dynamic Forensic Watermarking**: Repeating diagonal watermark containing the recipient's verified email and timestamp over documents.
-5. **Forward Protection (Device Locking)**: Cryptographically binds the link to the first browser/device that opens it. Forwarded links fail immediately.
-6. **Zero Public Storage Exposure**: Files are stored in Cloudinary in `authenticated` mode. Recipients never see storage URLs or bucket endpoints; all byte streams are verified and proxied server-side.
+> A secure, controlled document-sharing platform engineered for sensitive files with revocable access, view limits, anti-forwarding device locks, and an immutable audit ledger.
 
 ---
 
-## 🏛️ System Architecture
+## 📌 What is DocVault?
 
-```mermaid
-flowchart TD
-    subgraph Clients
-        Owner["Document Owner<br/>(React Dashboard)"]
-        Recipient["Unauthenticated Recipient<br/>(Web Browser / Mobile)"]
-    end
+Unlike conventional cloud drives that prioritize frictionless sharing, **DocVault** is built for strict control and accountability. It allows document owners to share confidential records (such as legal files, certificates, and reports) under precise, enforceable constraints.
 
-    subgraph DocVault Backend ["DocVault API (Node.js & Express :5000)"]
-        AuthMiddleware["authenticate.js<br/>(Bearer Access Token)"]
-        AccessRouter["accessRoutes.js<br/>(Rate Limited)"]
-        CheckPipeline["7-Step Verification Pipeline"]
-        TokenService["tokenService.js<br/>(Rotation & Reuse Detection)"]
-        StreamProxy["Streaming & Range Proxy"]
-    end
+Recipients access documents via tamper-proof signed links without exposing direct storage endpoints.
 
-    subgraph Infrastructure
-        MongoDB[("MongoDB<br/>(Users, Docs, Shares, Immutable Logs)")]
-        Redis[("Upstash Redis<br/>(Sub-ms Revocation Blacklist)")]
-        Cloudinary[("Cloudinary Authenticated Storage<br/>(Non-Public Buckets)")]
-    end
+---
 
-    Owner -->|Uploads Document| DocVault Backend
-    DocVault Backend -->|Authenticated Upload| Cloudinary
-    Owner -->|Mints Ephemeral Link| DocVault Backend
-    DocVault Backend -->|Generates Signed JWT| Owner
+## ✨ Key Capabilities
 
-    Recipient -->|Opens /s/:token| AccessRouter
-    AccessRouter --> CheckPipeline
-    CheckPipeline -->|1. Check Blacklist| Redis
-    CheckPipeline -->|2. Verify Expiry & Device Lock| MongoDB
-    CheckPipeline -->|3. Atomic Incr View| MongoDB
-    CheckPipeline -->|4. Log Viewed/Denied| MongoDB
-    CheckPipeline -->|5. Issue Viewer Ticket| Recipient
+- **Auto-Expiring Links:** Time-based access windows (1 hour to 7 days) and strict maximum view counts.
+- **Instant Revocation:** Invalidate access immediately via in-memory caching without reissuing the share link.
+- **Zero-Storage URL Leakage:** Files are streamed through a server-side backend proxy; raw Cloudinary storage URLs are never exposed to the client.
+- **Recipient Deterrents:** Dynamic diagonal watermarking (displaying recipient email and timestamp) and disabled save/print shortcuts.
+- **Device-Lock (Anti-Forwarding):** Binds access to the first authorized device via secure HTTP-only cookies, blocking forwarded link abuse.
+- **Immutable Security Ledger:** Append-only access logs tracking views, downloads, device signatures, and unauthorized attempts.
+- **Mandatory Account Match:** Strict identity verification requiring recipients to log in with the exact recipient email before viewing.
 
-    Recipient -->|GET /stream?ticket=...| StreamProxy
-    StreamProxy -->|Fetch Signed URL & Pipe| Cloudinary
-    StreamProxy -->|Stream Bytes to Canvas/PDF.js| Recipient
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend:** React (Vite), Tailwind CSS, Lucide Icons, Axios
+- **Backend:** Node.js, Express (ES Modules)
+- **Database:** MongoDB (Mongoose)
+- **Cache & Revocation:** Upstash Redis
+- **File Storage:** Cloudinary (Authenticated Uploads & Private Delivery)
+- **Security & Auth:** JWT, Bcrypt.js (Cost factor 12), HTTP-only Cookies, Helmet, Rate Limiting
+- **Email Service:** Resend API (Transactional OTP verification)
+
+---
+
+## 🏗️ Architecture & Security Model
+
+```
+                    ┌─────────────────────────┐
+                    │ Document Owner (Portal) │
+                    └────────────┬────────────┘
+                                 │
+                   (Upload / Mint Signed Grants)
+                                 ▼
+      ┌─────────────────────────────────────────────────────┐
+      │               DocVault API Backend                  │
+      │  ┌─────────────────┐       ┌─────────────────────┐  │
+      │  │ Auth & OTP Flow │       │  Access Controller  │  │
+      │  └─────────────────┘       └──────────┬──────────┘  │
+      └───────────────────────────────────────┼─────────────┘
+                                              │
+              ┌───────────────────────────────┴───────────────────────────────┐
+              ▼                               ▼                               ▼
+   ┌────────────────────┐           ┌────────────────────┐          ┌───────────────────┐
+   │   Upstash Redis    │           │      MongoDB       │          │    Cloudinary     │
+   │ Sub-ms Revocation  │           │ Documents, Shares, │          │  Private Storage  │
+   │     Blacklist      │           │ Immutable Ledger   │          │ (Streamed Proxy)  │
+   └────────────────────┘           └────────────────────┘          └───────────────────┘
 ```
 
+1. **Tokens Kept in Memory:** Access tokens live exclusively in client memory, preventing XSS-based storage theft.
+2. **Refresh Rotation & Reuse Detection:** Rotates refresh tokens on use; replay attempts revoke the entire token family.
+3. **Fail-Closed Revocation:** Blacklist checks fail closed during network partitions to prevent unauthorized access.
+4. **Isolated Cryptographic Keys:** Public share tokens use distinct signing secrets from internal user credentials.
+
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Getting Started
 
 ### Prerequisites
-- **Node.js** >= v18.0 (v20+ recommended)
-- **MongoDB** (Local `mongodb://localhost:27017/docvault` or MongoDB Atlas)
-- **Upstash Redis** (Free serverless Redis instance)
-- **Cloudinary Account** (Free cloud storage)
 
-### 1. Repository Setup
+- **Node.js** >= 18.0
+- **MongoDB** (Local instance or MongoDB Atlas)
+- **Upstash Redis** (Serverless Redis REST endpoint)
+- **Cloudinary** (Account with API credentials)
+- **Resend** (Optional for production email delivery; dev fallback prints OTP to console)
+
+### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-username/docvault.git
-cd docvault
+git clone https://github.com/ayushsangamm/DocVault.git
+cd DocVault
 ```
 
-### 2. Backend Configuration & Startup
+### 2. Backend Configuration
 
 ```bash
 cd backend
 cp .env.example .env
 ```
 
-Populate `backend/.env` with your credentials:
+Configure `backend/.env`:
 
 ```env
 PORT=5000
 CLIENT_URL=http://localhost:5173
 NODE_ENV=development
 MONGODB_URI=mongodb://localhost:27017/docvault
+
+# Cloudinary
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
-UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your_upstash_token
-JWT_ACCESS_SECRET=your_generated_access_secret
-JWT_REFRESH_SECRET=your_generated_refresh_secret
-SHARE_TOKEN_SECRET=your_generated_share_secret
-```
 
-> **Tip:** You can generate high-entropy 64-byte cryptographic secrets by running:
-> ```bash
-> node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
-> ```
+# Upstash Redis
+UPSTASH_REDIS_REST_URL=https://your-upstash-redis.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_upstash_token
+
+# Cryptographic Secrets (64-byte hex)
+JWT_ACCESS_SECRET=your_jwt_access_secret
+JWT_REFRESH_SECRET=your_jwt_refresh_secret
+SHARE_TOKEN_SECRET=your_share_token_secret
+
+# Resend Email (Optional for testing)
+RESEND_API_KEY=re_your_resend_api_key
+```
 
 Install dependencies and start backend:
 
 ```bash
 npm install
-npm run seed     # (Optional) Seed realistic demo records & user: demo@docvault.io / Password123!
-npm run dev      # Starts on http://localhost:5000
+npm run seed      # (Optional) Seed demo documents & shares
+npm run dev       # Starts backend on http://localhost:5000
 ```
 
-Run test suite:
-
-```bash
-npm test         # Executes Vitest suite for auth, rotation, reuse detection, and access checks
-```
-
-### 3. Frontend Configuration & Startup
+### 3. Frontend Configuration
 
 ```bash
 cd ../frontend
@@ -121,73 +134,66 @@ cp .env.example .env
 ```
 
 Configure `frontend/.env`:
+
 ```env
 VITE_API_BASE_URL=http://localhost:5000/api
 ```
 
-Install dependencies and run frontend:
+Install dependencies and start frontend:
 
 ```bash
 npm install
-npm run dev      # Starts on http://localhost:5173
+npm run dev       # Starts frontend on http://localhost:5173
 ```
 
-Navigate to `http://localhost:5173/login` in your browser.
+---
+
+## 🧪 Testing & Verification
+
+Run the automated backend test suite:
+
+```bash
+cd backend
+npm test
+```
+
+The test suite covers:
+- User signup with hashed OTP verification.
+- Direct login with timing-attack prevention.
+- Refresh token rotation & replay family revocation.
+- 7-step zero-trust recipient verification pipeline.
+- Instant Redis blacklist kill-switch enforcement.
+- Device-lock (anti-forwarding) validation.
+- Mandatory recipient identity checks (`AUTH_REQUIRED` and `EMAIL_MISMATCH`).
 
 ---
 
-## 📡 API Route Reference
+## 📂 Project Structure
 
-| Method | Endpoint | Auth Required | Description |
-|---|---|---|---|
-| `GET` | `/api/health` | No | System health check and uptime status |
-| `POST` | `/api/auth/signup` | No (Rate Limited) | Register new document owner with bcrypt (cost 12) |
-| `POST` | `/api/auth/login` | No (Rate Limited) | Authenticate owner; returns short-lived access token + httpOnly refresh cookie |
-| `POST` | `/api/auth/refresh` | No (Cookie) | Rotates refresh token with cryptographic reuse detection |
-| `POST` | `/api/auth/logout` | No | Revokes refresh token and clears session cookie |
-| `GET` | `/api/auth/me` | Bearer Token | Fetches authenticated owner profile |
-| `POST` | `/api/documents` | Bearer Token | Multipart upload (10 MB limit, MIME + magic byte validation) |
-| `GET` | `/api/documents` | Bearer Token | List owned documents with active share counts |
-| `GET` | `/api/documents/:id` | Bearer Token | Fetch document detail, share grants, and recent logs |
-| `PATCH` | `/api/documents/:id` | Bearer Token | Rename document title |
-| `DELETE` | `/api/documents/:id` | Bearer Token | Delete Cloudinary asset and cascade-blacklist all active shares |
-| `POST` | `/api/shares` | Bearer Token | Mint a signed, revocable share link (`${CLIENT_URL}/s/<token>`) |
-| `GET` | `/api/shares` | Bearer Token | Filterable "Shared by me" list with computed statuses |
-| `GET` | `/api/shares/:id` | Bearer Token | Share detail and complete audit timeline |
-| `POST` | `/api/shares/:id/revoke` | Bearer Token | Instant kill switch; blacklists token in Redis with remaining TTL |
-| `POST` | `/api/shares/:id/reset-lock` | Bearer Token | Clears device lock session binding |
-| `POST` | `/api/shares/:id/regenerate-link` | Bearer Token | Blacklists old token and issues fresh grant with identical policy |
-| `POST` | `/api/access/open` | Public (Rate Limited) | Strictly ordered 7-step zero-trust verification pipeline |
-| `GET` | `/api/access/stream` | Public (Ticket) | Streams document bytes with Range request support (no URL leaks) |
-| `POST` | `/api/access/download` | Public (Rate Limited) | Downloads binary payload; rejected with 403 if permission is `view` |
-| `POST` | `/api/access/verify-status` | Public | Real-time polling heartbeat to detect instant revocation |
-| `GET` | `/api/audit` | Bearer Token | Immutable, paginated compliance event logs |
-| `GET` | `/api/analytics/summary` | Bearer Token | Real database-computed security telemetry and 14-day view charts |
+```
+DocVault/
+├── backend/
+│   ├── src/
+│   │   ├── config/         # DB, Redis, Cloudinary & Env configuration
+│   │   ├── controllers/    # Auth, Documents, Shares, Access & Audit controllers
+│   │   ├── middleware/     # Auth, Rate limiting, Upload, Error & Validation
+│   │   ├── models/         # User, Document, SharePermission, AccessLog schemas
+│   │   ├── routes/         # Express API routers
+│   │   ├── services/       # Token, Cloudinary, Audit & Blacklist services
+│   │   └── utils/          # API error & client telemetry helpers
+│   └── tests/              # Vitest automated test suites
+├── frontend/
+│   ├── src/
+│   │   ├── components/     # Modals, Drawers, Navigation & Toasts
+│   │   ├── lib/            # Axios API client with interceptors
+│   │   ├── pages/          # Dashboard, Document Detail, Shares, Audit & Viewer
+│   │   └── store/          # Zustand authentication store
+│   └── package.json
+└── README.md
+```
 
 ---
 
-## 🛡️ Security Decisions & Principles
+## 📄 License
 
-1. **Tokens in Memory Only**: The frontend never stores access tokens in `localStorage` or `sessionStorage`. This prevents token extraction via Cross-Site Scripting (XSS).
-2. **Refresh Token Rotation & Reuse Detection**: Refresh tokens are stored hashed (SHA-256) at rest. Upon every refresh, the token is consumed and rotated. If a previously consumed token is replayed, the entire session family is automatically revoked.
-3. **Fail-Closed Redis Verification**: If Upstash Redis experiences a transient network outage during an access check, DocVault **fails closed** (denies access). It will never allow a potentially revoked link to open because of cache failure.
-4. **Separate Signing Secrets**: Access tokens and share tokens are signed with completely distinct secrets (`JWT_ACCESS_SECRET` vs `SHARE_TOKEN_SECRET`). A compromise in one domain does not impact the other.
-5. **Constant-Time Login Timing Protection**: If a non-existent email is entered during login, `bcrypt.compare` is still run against a dummy hash to prevent timing-based user enumeration.
-6. **Strict 404 for Foreign Resources**: Attempting to query an ID belonging to another user returns `404 Not Found` (never `403 Forbidden`) to eliminate ID harvesting.
-
----
-
-## 🌐 Deployment Notes
-
-- **Database**: In production, replace `MONGODB_URI` with a MongoDB Atlas replica set URI.
-- **Backend (Render / Railway / Fly.io)**: Ensure `NODE_ENV=production` is set so cookie `secure: true` is activated.
-- **Frontend (Vercel / Netlify)**: Set `VITE_API_BASE_URL` to your production backend URL.
-- **Cross-Domain Cookies**: If frontend and backend are deployed across different domains (e.g. `docvault.vercel.app` and `api.docvault.com`), set `CROSS_SITE=true` in `backend/.env` to configure `sameSite: 'none'` with `secure: true`.
-
----
-
-## ⚠️ Honest Limitations
-
-- **Screenshots Cannot Be Fully Prevented**: Operating system screen captures (PrintScreen, OS snipping tools) cannot be intercepted by browser JavaScript. DocVault deters leakage via prominent diagonal watermarks containing the recipient's identity and timestamp.
-- **Device Lock Cookie Mechanics**: Device locking relies on an `httpOnly` cookie (`share_sess`). A determined technical user with browser debugging tools could clone their cookies to a second device.
-- **Browser Cache Clearing**: If a legitimate recipient clears their browser cookies or switches browsers, they will be locked out until the owner clicks "Reset Device Lock" in the dashboard.
+This project is licensed under the MIT License.
