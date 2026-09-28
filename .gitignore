@@ -30,4 +30,5 @@ scratch/
 tmp/
 *.log
 
-WALKTROUGH.md
+WALKTHROUGH.md
+run-dev.js
