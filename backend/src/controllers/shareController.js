@@ -30,6 +30,7 @@ export const createShareSchema = z.object({
   expiresInHours: z.number().positive().max(720).optional(), // Max 30 days (720 hrs)
   maxViews: z.number().int().min(1).max(1000).nullable().optional(),
   lockToFirstDevice: z.boolean().default(false),
+  requireRecipientLogin: z.boolean().default(false),
   note: z.string().max(300).optional().default(''),
 });
 
@@ -42,6 +43,7 @@ export async function createShare(req, res) {
     expiresInHours,
     maxViews = null,
     lockToFirstDevice = false,
+    requireRecipientLogin = false,
     note = '',
   } = req.body;
 
@@ -91,6 +93,7 @@ export async function createShare(req, res) {
     status: 'active',
     tokenId,
     lockToFirstDevice: Boolean(lockToFirstDevice),
+    requireRecipientLogin: Boolean(requireRecipientLogin),
     note,
   });
 
@@ -124,6 +127,7 @@ export async function createShare(req, res) {
       maxViews: share.maxViews,
       expiresAt: share.expiresAt,
       lockToFirstDevice: share.lockToFirstDevice,
+      requireRecipientLogin: share.requireRecipientLogin,
       note: share.note,
     },
   });

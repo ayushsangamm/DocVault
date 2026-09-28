@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { SharePermission } from '../models/SharePermission.js';
@@ -184,6 +185,69 @@ export async function openShareLink(req, res) {
   }
 
   // -------------------------------------------------------------------------
+  // STEP 3.5: MANDATORY RECIPIENT IDENTITY VERIFICATION (requireRecipientLogin)
+  // WHY: Restricts viewing exclusively to an authenticated user whose email strictly
+  // matches the recipientEmail configured by the document owner.
+  // -------------------------------------------------------------------------
+  let authenticatedUser = null;
+  if (share.requireRecipientLogin) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        code: 'AUTH_REQUIRED',
+        message: 'Login required to access this document.',
+        targetEmail: share.recipientEmail,
+      });
+    }
+
+    const userToken = authHeader.split(' ')[1];
+    try {
+      authenticatedUser = jwt.verify(userToken, env.JWT_ACCESS_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        code: 'AUTH_REQUIRED',
+        message: 'Login required to access this document.',
+        targetEmail: share.recipientEmail,
+      });
+    }
+
+    if (
+      !authenticatedUser?.email ||
+      authenticatedUser.email.toLowerCase() !== share.recipientEmail.toLowerCase()
+    ) {
+      await logAuditEvent({
+        document: share.document,
+        sharePermission: share._id,
+        owner: share.sharedBy,
+        actor: {
+          type: 'recipient',
+          email: authenticatedUser?.email || 'Unknown',
+          userId: authenticatedUser?.sub || null,
+        },
+        action: 'access_denied_unauthorized_account',
+        ip: clientInfo.ip,
+        userAgent: clientInfo.userAgent,
+        deviceLabel: clientInfo.deviceLabel,
+        meta: {
+          targetEmail: share.recipientEmail,
+          attemptedEmail: authenticatedUser?.email || 'Unknown',
+          reason: 'Authenticated user email does not match required recipient email',
+        },
+      });
+
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_MISMATCH',
+        message: `This document is restricted to ${share.recipientEmail}. You are signed in as ${authenticatedUser?.email || 'Unknown'}`,
+        targetEmail: share.recipientEmail,
+        currentEmail: authenticatedUser?.email,
+      });
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // STEP 4: DEVICE LOCK VERIFICATION (lockToFirstDevice)
   // WHY: Ensures that if an owner enables "Lock to first device", a forwarded link
   // or stolen URL cannot be accessed on a second browser or computer.
@@ -320,7 +384,10 @@ export async function openShareLink(req, res) {
   // WHY: The frontend uses this 10-minute viewer ticket to authenticate the
   // subsequent `/stream` byte transfer without re-consuming view quota.
   // -------------------------------------------------------------------------
-  const viewerTicket = createViewerTicket({ sharePermissionId: share._id });
+  const viewerTicket = createViewerTicket({
+    sharePermissionId: share._id,
+    email: authenticatedUser?.email || null,
+  });
 
   const remainingViews =
     updatedShare.maxViews !== null
@@ -344,6 +411,7 @@ export async function openShareLink(req, res) {
       maxViews: updatedShare.maxViews,
       remainingViews,
       lockToFirstDevice: updatedShare.lockToFirstDevice,
+      requireRecipientLogin: updatedShare.requireRecipientLogin,
       note: updatedShare.note,
     },
     viewerTicket,
@@ -453,6 +521,29 @@ export async function streamDocument(req, res) {
   const share = await SharePermission.findById(jti);
   if (!share || share.status === 'revoked' || new Date() > share.expiresAt) {
     throw ApiError.forbidden('Access link is no longer valid or has expired.', 'SHARE_EXPIRED');
+  }
+
+  // Mandatory identity verification if requireRecipientLogin is enabled
+  if (share.requireRecipientLogin) {
+    let viewerEmail = decoded.email;
+    if (!viewerEmail) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const authDecoded = jwt.verify(authHeader.split(' ')[1], env.JWT_ACCESS_SECRET);
+          viewerEmail = authDecoded.email;
+        } catch {}
+      }
+    }
+    if (!viewerEmail) {
+      throw ApiError.unauthorized('Login required to stream this document.', 'AUTH_REQUIRED');
+    }
+    if (viewerEmail.toLowerCase() !== share.recipientEmail.toLowerCase()) {
+      throw ApiError.forbidden(
+        `This document is restricted to ${share.recipientEmail}.`,
+        'EMAIL_MISMATCH'
+      );
+    }
   }
 
   const document = await Document.findById(share.document).select('+cloudinaryPublicId');
@@ -567,6 +658,27 @@ export async function downloadDocument(req, res) {
   const share = await SharePermission.findById(jti);
   if (!share || share.status === 'revoked' || new Date() > share.expiresAt) {
     throw ApiError.forbidden('Share link has expired or was revoked.', 'SHARE_EXPIRED');
+  }
+
+  // Mandatory identity verification if requireRecipientLogin is enabled
+  if (share.requireRecipientLogin) {
+    let userEmail = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const authDecoded = jwt.verify(authHeader.split(' ')[1], env.JWT_ACCESS_SECRET);
+        userEmail = authDecoded.email;
+      } catch {}
+    }
+    if (!userEmail) {
+      throw ApiError.unauthorized('Login required to download this document.', 'AUTH_REQUIRED');
+    }
+    if (userEmail.toLowerCase() !== share.recipientEmail.toLowerCase()) {
+      throw ApiError.forbidden(
+        `This document is restricted to ${share.recipientEmail}.`,
+        'EMAIL_MISMATCH'
+      );
+    }
   }
 
   // Device lock verification

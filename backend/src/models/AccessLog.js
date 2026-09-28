@@ -59,6 +59,7 @@ const accessLogSchema = new mongoose.Schema(
         'access_denied_max_views',
         'access_denied_different_device',
         'access_denied_invalid_token',
+        'access_denied_unauthorized_account',
         'suspicious_multi_device',
       ],
       required: true,

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   AlertCircle,
   ExternalLink,
+  UserCheck,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useToast } from './Toast';
@@ -26,6 +27,7 @@ export function ShareModal({ document, isOpen, onClose, onShareCreated }) {
   const [maxViewsOption, setMaxViewsOption] = useState('unlimited'); // '1' | '3' | '10' | 'unlimited' | 'custom'
   const [customViews, setCustomViews] = useState('5');
   const [lockToFirstDevice, setLockToFirstDevice] = useState(false);
+  const [requireRecipientLogin, setRequireRecipientLogin] = useState(false);
   const [note, setNote] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,6 +77,7 @@ export function ShareModal({ document, isOpen, onClose, onShareCreated }) {
         expiresInHours,
         maxViews,
         lockToFirstDevice,
+        requireRecipientLogin,
         note,
       });
 
@@ -101,6 +104,7 @@ export function ShareModal({ document, isOpen, onClose, onShareCreated }) {
   const handleClose = () => {
     setCreatedShare(null);
     setRecipientEmail('');
+    setRequireRecipientLogin(false);
     setNote('');
     setError('');
     onClose();
@@ -344,6 +348,26 @@ export function ShareModal({ document, isOpen, onClose, onShareCreated }) {
                 </span>
                 <p className="text-[11px] text-zinc-400 leading-relaxed">
                   Cryptographically binds to the first device that opens this link. If forwarded to another person or device, access is instantly denied with code 403.
+                </p>
+              </label>
+            </div>
+
+            {/* Mandatory Recipient Login (Strict Email Match) */}
+            <div className="p-3.5 bg-zinc-950 rounded-xl border border-zinc-800/90 flex items-start gap-3">
+              <input
+                id="requireLoginCheckbox"
+                type="checkbox"
+                checked={requireRecipientLogin}
+                onChange={(e) => setRequireRecipientLogin(e.target.checked)}
+                className="mt-1 w-4 h-4 rounded border-zinc-700 text-[#FF3B5C] focus:ring-[#FF3B5C] bg-zinc-900 cursor-pointer"
+              />
+              <label htmlFor="requireLoginCheckbox" className="cursor-pointer text-xs space-y-0.5 select-none">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-blue-400" />
+                  Require Recipient Login (Strict Email Match)
+                </span>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Recipient must be logged in with the target email address to view this file.
                 </p>
               </label>
             </div>

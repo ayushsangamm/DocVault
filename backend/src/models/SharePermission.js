@@ -77,6 +77,10 @@ const sharePermissionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    requireRecipientLogin: {
+      type: Boolean,
+      default: false,
+    },
     boundSession: {
       type: String,
       default: null,

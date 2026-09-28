@@ -98,8 +98,14 @@ export function AuditPage() {
       case 'access_denied_different_device':
         return {
           bg: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
-          icon: <Lock className="w-3 h-3 text-rose-400" />,
+          icon: <Lock className="w-3.5 h-3.5 text-rose-400" />,
           label: 'Device Lock Denied',
+        };
+      case 'access_denied_unauthorized_account':
+        return {
+          bg: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+          icon: <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />,
+          label: 'Wrong Account Denied',
         };
       case 'access_denied_revoked':
         return {
@@ -173,6 +179,7 @@ export function AuditPage() {
             <option value="downloaded">Downloads</option>
             <option value="download_blocked">Blocked Downloads</option>
             <option value="access_denied_different_device">Device Lock Denials</option>
+            <option value="access_denied_unauthorized_account">Unauthorized Account Denials</option>
             <option value="access_denied_revoked">Revoked Link Attempts</option>
             <option value="access_denied_expired">Expired Attempts</option>
             <option value="suspicious_multi_device">Forward Detections</option>

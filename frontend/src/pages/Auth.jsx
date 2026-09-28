@@ -34,13 +34,17 @@ export function Auth({ defaultTab = 'login' }) {
     }
   }, [location.pathname]);
 
+  const searchParams = new URLSearchParams(location.search);
+  const redirectTarget = searchParams.get('redirect') || '/app/documents';
+  const targetEmailParam = searchParams.get('email') || '';
+
   // Form States
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState(targetEmailParam);
   const [loginPassword, setLoginPassword] = useState('');
 
   // Signup Step 1 States
   const [signupName, setSignupName] = useState('');
-  const [signupEmail, setSignupEmail] = useState('');
+  const [signupEmail, setSignupEmail] = useState(targetEmailParam);
   const [signupPassword, setSignupPassword] = useState('');
   const [signupStep, setSignupStep] = useState(1); // 1 = Details, 2 = OTP
 
@@ -61,10 +65,11 @@ export function Auth({ defaultTab = 'login' }) {
     setActiveTab(tab);
     setFormError('');
     setInfoMessage('');
+    const query = location.search ? location.search : '';
     if (tab === 'login') {
-      navigate('/login', { replace: true });
+      navigate('/login' + query, { replace: true });
     } else {
-      navigate('/signup', { replace: true });
+      navigate('/signup' + query, { replace: true });
     }
   };
 
@@ -82,7 +87,7 @@ export function Auth({ defaultTab = 'login' }) {
 
     if (result.success) {
       addToast('Authenticated successfully. Welcome back.', 'success');
-      navigate('/app/documents');
+      navigate(redirectTarget);
     } else {
       setFormError(result.message);
     }
@@ -144,7 +149,7 @@ export function Auth({ defaultTab = 'login' }) {
 
     if (result.success) {
       addToast('Account created and verified successfully! Welcome to DocVault.', 'success');
-      navigate('/app/documents');
+      navigate(redirectTarget);
     } else {
       setFormError(result.message);
     }

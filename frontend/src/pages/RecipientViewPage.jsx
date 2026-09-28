@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   KeyRound,
   ShieldAlert,
@@ -15,15 +15,23 @@ import {
   ShieldCheck,
   RefreshCw,
   EyeOff,
+  UserCheck,
+  UserX,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuthStore } from '../store/useAuthStore';
 
 export function RecipientViewPage() {
   const { token } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, isAuthenticated, initSession, logout } = useAuthStore();
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [errorState, setErrorState] = useState(null); // { code, message }
+  const [errorState, setErrorState] = useState(null); // { code, message, targetEmail, currentEmail }
   const [viewerTicket, setViewerTicket] = useState(null);
   const [streamUrl, setStreamUrl] = useState('');
   const [blobUrl, setBlobUrl] = useState(null);
@@ -44,6 +52,11 @@ export function RecipientViewPage() {
         setLoading(true);
         setErrorState(null);
 
+        // If not already authenticated in memory, attempt background session init
+        if (!isAuthenticated) {
+          await initSession().catch(() => {});
+        }
+
         const res = await api.post('/access/open', { token });
         if (!isMounted) return;
 
@@ -59,7 +72,9 @@ export function RecipientViewPage() {
         const message =
           err.response?.data?.message ||
           'Unable to verify document access. This link may be expired, revoked, or invalid.';
-        setErrorState({ code, message });
+        const targetEmail = err.response?.data?.targetEmail;
+        const currentEmail = err.response?.data?.currentEmail || user?.email;
+        setErrorState({ code, message, targetEmail, currentEmail });
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -273,6 +288,53 @@ export function RecipientViewPage() {
             badge: 'ANTI-FORWARDING PROTECTION',
             color: 'rose',
           };
+        case 'AUTH_REQUIRED':
+          return {
+            icon: <UserCheck className="w-10 h-10 text-blue-400" />,
+            title: 'Authentication Required',
+            desc: `This document is strictly shared with ${errorState.targetEmail || 'a verified recipient'}. Please log in or sign up with this email to view.`,
+            badge: 'IDENTITY VERIFICATION REQUIRED',
+            color: 'blue',
+            action: (
+              <button
+                onClick={() =>
+                  navigate(
+                    `/login?redirect=${encodeURIComponent(location.pathname)}&email=${encodeURIComponent(
+                      errorState.targetEmail || ''
+                    )}`
+                  )
+                }
+                className="w-full py-2.5 px-4 bg-[#FF3B5C] hover:bg-[#E02345] text-white text-xs font-semibold rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#FF3B5C]/20"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Log In / Register</span>
+              </button>
+            ),
+          };
+        case 'EMAIL_MISMATCH':
+          return {
+            icon: <UserX className="w-10 h-10 text-rose-400" />,
+            title: 'Wrong Account',
+            desc: `You are currently logged in as ${errorState.currentEmail || user?.email || 'a different account'}. This confidential document is strictly restricted to ${errorState.targetEmail}. Please switch to the authorized account.`,
+            badge: 'ACCOUNT MISMATCH',
+            color: 'rose',
+            action: (
+              <button
+                onClick={async () => {
+                  await logout();
+                  navigate(
+                    `/login?redirect=${encodeURIComponent(location.pathname)}&email=${encodeURIComponent(
+                      errorState.targetEmail || ''
+                    )}`
+                  );
+                }}
+                className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-xl border border-zinc-700 transition flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Switch Account</span>
+              </button>
+            ),
+          };
         default:
           return {
             icon: <AlertTriangle className="w-10 h-10 text-zinc-400" />,
@@ -305,6 +367,8 @@ export function RecipientViewPage() {
               {details.desc}
             </p>
           </div>
+
+          {details.action && <div className="pt-2">{details.action}</div>}
 
           <div className="pt-4 border-t border-zinc-800/80 text-[11px] font-mono text-zinc-500">
             DocVault Zero-Trust Security Enforcement

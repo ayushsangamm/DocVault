@@ -69,12 +69,16 @@ export function decodeShareTokenUnverified(token) {
  * URL directly where it might be logged in CDN or proxy access logs. Instead, `POST /open`
  * returns a short-lived (10m) streaming ticket.
  */
-export function createViewerTicket({ sharePermissionId }) {
+export function createViewerTicket({ sharePermissionId, email = null }) {
+  const payload = {
+    jti: sharePermissionId.toString(),
+    purpose: 'stream',
+  };
+  if (email) {
+    payload.email = email;
+  }
   return jwt.sign(
-    {
-      jti: sharePermissionId.toString(),
-      purpose: 'stream',
-    },
+    payload,
     env.SHARE_TOKEN_SECRET,
     {
       expiresIn: '10m',

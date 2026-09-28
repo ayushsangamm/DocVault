@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Laptop,
   CheckCircle2,
+  UserX,
 } from 'lucide-react';
 
 /**
@@ -81,6 +82,8 @@ export function InspectorDrawer({ record, timeline = [], onClose, onRevoke }) {
         return <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />;
       case 'access_denied_different_device':
         return <Lock className="w-3.5 h-3.5 text-rose-400" />;
+      case 'access_denied_unauthorized_account':
+        return <UserX className="w-3.5 h-3.5 text-rose-400" />;
       case 'access_denied_revoked':
         return <XOctagon className="w-3.5 h-3.5 text-rose-500" />;
       case 'access_denied_expired':

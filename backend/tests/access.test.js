@@ -6,7 +6,9 @@ import { connectDB, disconnectDB } from '../src/config/db.js';
 import { User } from '../src/models/User.js';
 import { Document } from '../src/models/Document.js';
 import { SharePermission } from '../src/models/SharePermission.js';
+import { AccessLog } from '../src/models/AccessLog.js';
 import { createShareToken } from '../src/services/shareTokenService.js';
+import { generateAccessToken } from '../src/services/tokenService.js';
 import { blacklistToken } from '../src/services/blacklistService.js';
 
 describe('Recipient Access, Check Order, & Revocation Test Suite', () => {
@@ -253,5 +255,130 @@ describe('Recipient Access, Check Order, & Revocation Test Suite', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('DOWNLOAD_FORBIDDEN');
+  });
+
+  it('enforces requireRecipientLogin: rejects unauthenticated access with 401 AUTH_REQUIRED', async () => {
+    const shareId = new mongoose.Types.ObjectId();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const share = await SharePermission.create({
+      _id: shareId,
+      document: testDoc._id,
+      sharedBy: ownerUser._id,
+      recipientEmail: 'strictly.verified@example.com',
+      permission: 'view',
+      maxViews: 5,
+      viewCount: 0,
+      expiresAt,
+      status: 'active',
+      tokenId: shareId.toString(),
+      requireRecipientLogin: true,
+    });
+
+    const token = createShareToken({
+      sharePermissionId: share._id,
+      documentId: testDoc._id,
+      permission: share.permission,
+      expiresAt,
+    });
+
+    // Request WITHOUT Authorization header
+    const res = await request(app).post('/api/access/open').send({ token });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('AUTH_REQUIRED');
+    expect(res.body.targetEmail).toBe('strictly.verified@example.com');
+  });
+
+  it('enforces requireRecipientLogin: rejects mismatched authenticated account with 403 EMAIL_MISMATCH', async () => {
+    const shareId = new mongoose.Types.ObjectId();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const share = await SharePermission.create({
+      _id: shareId,
+      document: testDoc._id,
+      sharedBy: ownerUser._id,
+      recipientEmail: 'strictly.verified@example.com',
+      permission: 'view',
+      maxViews: 5,
+      viewCount: 0,
+      expiresAt,
+      status: 'active',
+      tokenId: shareId.toString(),
+      requireRecipientLogin: true,
+    });
+
+    const token = createShareToken({
+      sharePermissionId: share._id,
+      documentId: testDoc._id,
+      permission: share.permission,
+      expiresAt,
+    });
+
+    // Generate token for a DIFFERENT user
+    const wrongUserToken = generateAccessToken({
+      _id: new mongoose.Types.ObjectId(),
+      email: 'imposter@otherdomain.com',
+    });
+
+    const res = await request(app)
+      .post('/api/access/open')
+      .set('Authorization', `Bearer ${wrongUserToken}`)
+      .send({ token });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('EMAIL_MISMATCH');
+    expect(res.body.targetEmail).toBe('strictly.verified@example.com');
+
+    // Verify audit log has access_denied_unauthorized_account
+    const auditRecord = await AccessLog.findOne({
+      sharePermission: share._id,
+      action: 'access_denied_unauthorized_account',
+    });
+    expect(auditRecord).toBeDefined();
+    expect(auditRecord.meta.targetEmail).toBe('strictly.verified@example.com');
+    expect(auditRecord.meta.attemptedEmail).toBe('imposter@otherdomain.com');
+  });
+
+  it('enforces requireRecipientLogin: grants access when user email matches strictly', async () => {
+    const shareId = new mongoose.Types.ObjectId();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const share = await SharePermission.create({
+      _id: shareId,
+      document: testDoc._id,
+      sharedBy: ownerUser._id,
+      recipientEmail: 'strictly.verified@example.com',
+      permission: 'view',
+      maxViews: 5,
+      viewCount: 0,
+      expiresAt,
+      status: 'active',
+      tokenId: shareId.toString(),
+      requireRecipientLogin: true,
+    });
+
+    const token = createShareToken({
+      sharePermissionId: share._id,
+      documentId: testDoc._id,
+      permission: share.permission,
+      expiresAt,
+    });
+
+    // Generate token for the EXACT matching user
+    const matchingUserToken = generateAccessToken({
+      _id: new mongoose.Types.ObjectId(),
+      email: 'strictly.verified@example.com',
+    });
+
+    const res = await request(app)
+      .post('/api/access/open')
+      .set('Authorization', `Bearer ${matchingUserToken}`)
+      .send({ token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.share.requireRecipientLogin).toBe(true);
+    expect(res.body.viewerTicket).toBeDefined();
   });
 });

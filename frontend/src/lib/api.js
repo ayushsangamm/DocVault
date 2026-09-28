@@ -54,10 +54,12 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Do not attempt refresh on auth login, signup, or the refresh endpoint itself
+    // Do not attempt refresh on auth login, signup, the refresh endpoint itself, or AUTH_REQUIRED
     if (
       !originalRequest ||
       originalRequest._retry ||
+      originalRequest.skipAuthRefresh ||
+      error.response?.data?.code === 'AUTH_REQUIRED' ||
       originalRequest.url?.includes('/auth/login') ||
       originalRequest.url?.includes('/auth/signup') ||
       originalRequest.url?.includes('/auth/refresh')
