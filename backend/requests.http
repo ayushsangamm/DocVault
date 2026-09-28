@@ -1,0 +1,186 @@
+### DocVault REST Client Requests
+### Environment Variables
+@baseUrl = http://localhost:5000/api
+@authToken = {{login.response.body.accessToken}}
+
+### 1. Healthcheck
+GET {{baseUrl}}/health
+
+### ==============================================================================
+### 2. AUTHENTICATION (Owner)
+### ==============================================================================
+
+### Step 1: Request 6-digit OTP for Registration
+POST {{baseUrl}}/auth/send-otp
+Content-Type: application/json
+
+{
+  "email": "jordan@docvault.io"
+}
+
+### Step 2: Verify OTP and Register Account
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Jordan Davis",
+  "email": "jordan@docvault.io",
+  "password": "Password123!",
+  "otp": "123456"
+}
+
+### Login Owner (stores access token in @authToken variable)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "demo@docvault.io",
+  "password": "Password123!"
+}
+
+### Silent Refresh Token Rotation
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+### Get Current Authenticated Owner Profile
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{authToken}}
+
+### Logout Owner
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{authToken}}
+
+### ==============================================================================
+### 3. DOCUMENTS (Owner)
+### ==============================================================================
+
+### List Documents Owned by User
+# @name listDocs
+GET {{baseUrl}}/documents?page=1&limit=10
+Authorization: Bearer {{authToken}}
+
+@sampleDocId = {{listDocs.response.body.documents[0].id}}
+
+### Get Document Detail with Shares and Audit Logs
+GET {{baseUrl}}/documents/{{sampleDocId}}
+Authorization: Bearer {{authToken}}
+
+### Rename Document
+PATCH {{baseUrl}}/documents/{{sampleDocId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "title": "Renamed Q3 Financial Audit Report"
+}
+
+### Delete Document (Cascade Blacklists Active Shares)
+DELETE {{baseUrl}}/documents/{{sampleDocId}}
+Authorization: Bearer {{authToken}}
+
+### ==============================================================================
+### 4. SHARES (Owner)
+### ==============================================================================
+
+### Create New Share Grant (Signed Link)
+# @name createShare
+POST {{baseUrl}}/shares
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "documentId": "{{sampleDocId}}",
+  "recipientEmail": "auditor@deloitte.com",
+  "permission": "view",
+  "expiresInHours": 48,
+  "maxViews": 5,
+  "lockToFirstDevice": true,
+  "note": "Strict compliance audit round"
+}
+
+@sampleShareId = {{createShare.response.body.share.id}}
+@sampleShareToken = {{createShare.response.body.token}}
+
+### List Shares Created by Owner
+GET {{baseUrl}}/shares?status=active
+Authorization: Bearer {{authToken}}
+
+### Get Share Detail & Audit Timeline
+GET {{baseUrl}}/shares/{{sampleShareId}}
+Authorization: Bearer {{authToken}}
+
+### Instant Revocation (Triggers Redis Blacklist)
+POST {{baseUrl}}/shares/{{sampleShareId}}/revoke
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "reason": "Immediate security withdrawal"
+}
+
+### Reset Device Lock
+POST {{baseUrl}}/shares/{{sampleShareId}}/reset-lock
+Authorization: Bearer {{authToken}}
+
+### Regenerate Link (Revokes Old Token)
+POST {{baseUrl}}/shares/{{sampleShareId}}/regenerate-link
+Authorization: Bearer {{authToken}}
+
+### ==============================================================================
+### 5. RECIPIENT ACCESS (Public, No Login Required)
+### ==============================================================================
+
+### Recipient Opens Share Link (Consumes View, Enforces Device Lock, Issues Viewer Ticket)
+# @name openShare
+POST {{baseUrl}}/access/open
+Content-Type: application/json
+
+{
+  "token": "{{sampleShareToken}}"
+}
+
+@viewerTicket = {{openShare.response.body.viewerTicket}}
+
+### Stream Document Bytes (Proxied through backend, Range Header supported)
+GET {{baseUrl}}/access/stream?ticket={{viewerTicket}}
+
+### Download Document (Blocked if View-Only)
+POST {{baseUrl}}/access/download
+Content-Type: application/json
+
+{
+  "token": "{{sampleShareToken}}"
+}
+
+### Status Check Heartbeat (Viewer Polling)
+POST {{baseUrl}}/access/verify-status
+Content-Type: application/json
+
+{
+  "token": "{{sampleShareToken}}"
+}
+
+### ==============================================================================
+### 6. AUDIT LEDGER (Owner)
+### ==============================================================================
+
+### List Audit Events with Filters
+GET {{baseUrl}}/audit?page=1&limit=25
+Authorization: Bearer {{authToken}}
+
+### Filter Audit by Action (e.g., access_denied_different_device, download_blocked)
+GET {{baseUrl}}/audit?action=download_blocked
+Authorization: Bearer {{authToken}}
+
+### Search Audit by IP or Recipient Email
+GET {{baseUrl}}/audit?search=sarah.chen
+Authorization: Bearer {{authToken}}
+
+### ==============================================================================
+### 7. ANALYTICS (Owner)
+### ==============================================================================
+
+### Get Real Database Computed Analytics Summary
+GET {{baseUrl}}/analytics/summary
+Authorization: Bearer {{authToken}}

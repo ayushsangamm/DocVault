@@ -1,0 +1,13 @@
+{
+  "name": "docvault",
+  "version": "1.0.0",
+  "description": "DocVault - Controlled document-sharing full-stack MERN application",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node run-dev.js",
+    "seed": "npm run seed --prefix backend",
+    "test": "npm test --prefix backend",
+    "build": "npm run build --prefix frontend"
+  }
+}
