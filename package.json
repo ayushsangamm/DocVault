@@ -7,7 +7,22 @@
   "scripts": {
     "dev": "node run-dev.js",
     "seed": "npm run seed --prefix backend",
-    "test": "npm test --prefix backend",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --forceExit",
+    "test:vitest": "npm test --prefix backend",
+    "benchmark": "node benchmarks/run-all.js",
+    "benchmark:bcrypt": "node benchmarks/1_bcrypt_hash_benchmark.js",
+    "benchmark:login": "node benchmarks/2_login_benchmark.js",
+    "benchmark:access": "node benchmarks/3_document_access_benchmark.js",
+    "benchmark:streaming": "node benchmarks/4_file_streaming_benchmark.js",
     "build": "npm run build --prefix frontend"
+  },
+  "devDependencies": {
+    "autocannon": "^9.0.0",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.1"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.9"
   }
 }

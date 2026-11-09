@@ -88,11 +88,12 @@ export async function rotateRefreshToken(rawToken, { userAgent = '', ip = '' } =
 
   // REUSE DETECTION:
   // If the token presented was already revoked, someone is replaying an old token!
+  // Invalidate ALL sessions for this user across all devices to prevent ongoing exploitation.
   if (existingToken.revoked) {
-    console.warn(`[Security Alert] Refresh token reuse detected! Invalidating family: ${existingToken.family}`);
-    await RefreshToken.updateMany({ family: existingToken.family }, { revoked: true });
+    console.warn(`[Security Alert] Refresh token reuse detected! Invalidating all sessions for user: ${existingToken.user}`);
+    await RefreshToken.updateMany({ user: existingToken.user }, { revoked: true });
     throw ApiError.unauthorized(
-      'Suspicious session activity detected. All sessions in this chain have been terminated.',
+      'Suspicious session activity detected. All sessions for this account have been terminated.',
       'TOKEN_REUSE_DETECTED'
     );
   }
